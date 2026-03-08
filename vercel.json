@@ -1,0 +1,20 @@
+{
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "vite",
+  "outputDirectory": "dist",
+  "env": {
+    "VITE_META_API_BASE_URL": "@vite_meta_api_base_url",
+    "VITE_META_APP_ID": "@vite_meta_app_id",
+    "VITE_META_AD_ACCOUNT_ID": "@vite_meta_ad_account_id",
+    "VITE_API_BASE_URL": "@vite_api_base_url",
+    "META_ACCESS_TOKEN": "@meta_access_token"
+  },
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "nodejs20.x"
+    }
+  },
+  "crons": []
+}
