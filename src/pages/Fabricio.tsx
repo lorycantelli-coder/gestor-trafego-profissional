@@ -10,6 +10,7 @@ import TrafficDonut from "@/components/dashboard/TrafficDonut";
 import CampaignTable from "@/components/dashboard/CampaignTable";
 import PaymentBreakdown from "@/components/dashboard/PaymentBreakdown";
 import RevenueProjection from "@/components/dashboard/RevenueProjection";
+import KiwifySalesPanel from "@/components/dashboard/KiwifySalesPanel";
 
 // Dados específicos para Fabrício
 const fabricioMetrics = {
@@ -91,6 +92,10 @@ const Fabricio = () => {
               <KPICard label="Taxa de Conversão" value={`${fabricioMetrics.conversionRate.toFixed(1)}%`} change={3.5} changeLabel="vs ontem" />
               <KPICard label="ROAS Geral" value={`${fabricioMetrics.roas.toFixed(2)}x`} change={7.8} changeLabel="vs ontem" />
             </div>
+
+            {/* Painel de Vendas Kiwify */}
+            <KiwifySalesPanel />
+
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <RevenueChart />
               <InvestmentROASChart />
