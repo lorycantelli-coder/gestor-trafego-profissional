@@ -10,6 +10,7 @@ export interface KiwifyMetrics {
   recentSales: KiwifySale[];
   isLoading: boolean;
   error: string | null;
+  isDemo?: boolean;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5173";
@@ -23,6 +24,7 @@ export const useKiwifySales = (days: number = 7) => {
     recentSales: [],
     isLoading: true,
     error: null,
+    isDemo: false,
   });
 
   const fetchSales = useCallback(async () => {

@@ -1,15 +1,22 @@
 import { useKiwifySales } from "@/hooks/useKiwifySales";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ShoppingCart, TrendingUp, DollarSign, Users } from "lucide-react";
+import { ShoppingCart, TrendingUp } from "lucide-react";
 
 const fmt = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
+const paymentLabel: Record<string, string> = {
+  credit_card: "Cartão",
+  pix: "PIX",
+  boleto: "Boleto",
+  unknown: "—",
+};
+
 export default function KiwifySalesPanel() {
-  const { totalRevenue, totalSales, avgTicket, conversionRate, lastSale, recentSales, isLoading, error } =
+  const { totalRevenue, totalSales, avgTicket, conversionRate, lastSale, recentSales, isLoading, error, isDemo } =
     useKiwifySales(7);
 
-  if (error) {
+  if (error && totalSales === 0) {
     return (
       <Card className="p-6 border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20 dark:border-yellow-800">
         <div className="text-sm text-yellow-800 dark:text-yellow-200">
@@ -29,8 +36,20 @@ export default function KiwifySalesPanel() {
           <Badge variant="outline" className="ml-2">
             {totalSales} vendas
           </Badge>
+          {isDemo && (
+            <Badge variant="secondary" className="text-xs">
+              DEMO
+            </Badge>
+          )}
         </div>
-        {totalSales > 0 && <Badge className="bg-green-500/20 text-green-700 dark:text-green-400">🟢 Ativo</Badge>}
+        {totalSales > 0 && !isDemo && (
+          <Badge className="bg-green-500/20 text-green-700 dark:text-green-400">🟢 Ativo</Badge>
+        )}
+        {isDemo && (
+          <Badge variant="outline" className="text-xs text-muted-foreground">
+            Configure Redis para dados reais
+          </Badge>
+        )}
       </div>
 
       {/* Métricas */}
@@ -68,6 +87,11 @@ export default function KiwifySalesPanel() {
               <p className="text-xs text-muted-foreground">Última venda</p>
               <p className="font-semibold">{lastSale.customerName}</p>
               <p className="text-sm text-muted-foreground">{lastSale.productName}</p>
+              {lastSale.paymentMethod && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {paymentLabel[lastSale.paymentMethod] ?? lastSale.paymentMethod}
+                </p>
+              )}
             </div>
             <div className="text-right">
               <p className="text-lg font-bold text-green-600 dark:text-green-400">{fmt(lastSale.amount)}</p>
@@ -94,7 +118,9 @@ export default function KiwifySalesPanel() {
                   <span className="font-bold">{fmt(sale.amount)}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{sale.productName}</span>
+                  <span>
+                    {sale.productName} · {paymentLabel[sale.paymentMethod ?? ""] ?? sale.paymentMethod}
+                  </span>
                   <span>{new Date(sale.timestamp).toLocaleTimeString("pt-BR")}</span>
                 </div>
               </div>
