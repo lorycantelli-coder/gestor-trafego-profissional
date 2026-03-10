@@ -117,6 +117,15 @@ export default async function handler(req, res) {
     console.log("[Kiwify Webhook] Evento recebido:", event);
     console.log("[Kiwify Webhook] RAW BODY:", JSON.stringify(body));
 
+    // Salva último payload no Redis para debug
+    if (REDIS_URL && REDIS_TOKEN) {
+      await fetch(`${REDIS_URL}/set/kiwify:debug:last_payload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${REDIS_TOKEN}`, "Content-Type": "application/json" },
+        body: JSON.stringify(JSON.stringify(body)),
+      });
+    }
+
     // Ignorar eventos não relevantes
     const relevantEvents = ["order.completed", "order.created", "order.refunded"];
     if (!relevantEvents.includes(event)) {
