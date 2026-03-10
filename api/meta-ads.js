@@ -76,10 +76,8 @@ function mapToTableRow(insight) {
     "offsite_conversion.fb_pixel_lead",
   ]);
 
-  // Views da página de vendas (ViewContent pixel)
+  // Visualizações de página de destino (clicou no anúncio e a página carregou)
   const pageViews = extractAction(insight.actions, [
-    "view_content",
-    "offsite_conversion.fb_pixel_view_content",
     "landing_page_view",
   ]);
 
