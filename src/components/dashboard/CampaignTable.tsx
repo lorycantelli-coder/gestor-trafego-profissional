@@ -1,50 +1,50 @@
 import { useState } from "react";
-import { campaigns as mockCampaigns, type Campaign } from "@/data/mockData";
 import { useMetaAdsCampaigns } from "@/hooks/useMetaAds";
+import { useKiwifySales } from "@/hooks/useKiwifySales";
 import { ArrowUpDown, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
-type SortKey = keyof Campaign;
-
-function roasBadge(roas: number) {
-  if (roas > 3) return <span className="rounded-full bg-success/10 text-success px-2 py-0.5 text-[10px] font-semibold">🔥 Top</span>;
-  if (roas >= 1) return <span className="rounded-full bg-warning/10 text-warning px-2 py-0.5 text-[10px] font-semibold">⚠️ Ok</span>;
-  return <span className="rounded-full bg-destructive/10 text-destructive px-2 py-0.5 text-[10px] font-semibold">🛑 Negativo</span>;
+// Tipo das linhas da tabela (apenas métricas Meta por campanha)
+interface CampaignRow {
+  id: string;
+  name: string;
+  invested: number;
+  impressions: number;
+  clicks: number;
+  cpc: number;
 }
 
-/** Converte dados da API Meta para o formato Campaign da tabela */
-function mapMetaToCampaign(metaCampaign: ReturnType<typeof useMetaAdsCampaigns>["data"][0]): Campaign {
-  return {
-    name: metaCampaign.name,
-    platform: "Meta Ads",
-    invested: metaCampaign.spend,
-    leads: metaCampaign.actions,       // mapped from leads in API
-    cpl: metaCampaign.cpa ?? 0,        // will be overridden below
-    sales: 0,
-    cpa: metaCampaign.cpa ?? 0,
-    revenue: metaCampaign.action_values,
-    roas: metaCampaign.roas ?? 0,
-  };
-}
+const fmt = (v: number) =>
+  `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+const fmtDec = (v: number) =>
+  `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+type SortKey = keyof CampaignRow;
+
+// Dados mock de fallback (apenas métricas de tráfego)
+const mockCampaigns: CampaignRow[] = [
+  { id: "1", name: "MAR26 · Broad - Interesse Digital", invested: 18500, impressions: 45000, clicks: 1800, cpc: 10.28 },
+  { id: "2", name: "MAR26 · Lookalike - Compradores", invested: 22000, impressions: 52000, clicks: 2200, cpc: 10.00 },
+  { id: "3", name: "MAR26 · Remarketing - Leads Quentes", invested: 16500, impressions: 38000, clicks: 1200, cpc: 13.75 },
+];
 
 export default function CampaignTable() {
-  const [sortKey, setSortKey] = useState<SortKey>("roas");
+  const [sortKey, setSortKey] = useState<SortKey>("invested");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  const { data: metaData, isLoading, isError, refetch } = useMetaAdsCampaigns();
+  const { data: metaData, isLoading: metaLoading, isError: metaError, refetch } = useMetaAdsCampaigns();
+  const { totalRevenue, totalSales, avgTicket, isDemo } = useKiwifySales(30);
 
-  // Usa dados reais se disponíveis, senão fallback para mock
-  const rawCampaigns: Campaign[] = (metaData && metaData.length > 0)
+  // Mapeia dados da Meta para linhas da tabela
+  const rows: CampaignRow[] = metaData && metaData.length > 0
     ? metaData.map((m) => ({
+        id: m.id,
         name: m.name,
-        platform: "Meta Ads",
         invested: m.spend,
-        leads: m.actions,
-        cpl: m.actions > 0 ? m.spend / m.actions : 0,
-        sales: 0,                        // Meta não retorna vendas sem pixel configurado
-        cpa: m.cpa ?? 0,
-        revenue: m.action_values,
-        roas: m.roas ?? 0,
+        impressions: m.impressions,
+        clicks: m.clicks,
+        cpc: m.cpc ?? (m.clicks > 0 ? m.spend / m.clicks : 0),
       }))
     : mockCampaigns;
 
@@ -55,64 +55,67 @@ export default function CampaignTable() {
     else { setSortKey(key); setSortDir("desc"); }
   };
 
-  const sorted = [...rawCampaigns].sort((a, b) => {
+  const sorted = [...rows].sort((a, b) => {
     const av = a[sortKey], bv = b[sortKey];
-    if (typeof av === "number" && typeof bv === "number") return sortDir === "asc" ? av - bv : bv - av;
-    return sortDir === "asc" ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+    if (typeof av === "number" && typeof bv === "number")
+      return sortDir === "asc" ? av - bv : bv - av;
+    return sortDir === "asc"
+      ? String(av).localeCompare(String(bv))
+      : String(bv).localeCompare(String(av));
   });
 
-  const totals = rawCampaigns.reduce(
-    (acc, c) => ({
-      invested: acc.invested + c.invested,
-      leads: acc.leads + c.leads,
-      sales: acc.sales + c.sales,
-      revenue: acc.revenue + c.revenue,
-    }),
-    { invested: 0, leads: 0, sales: 0, revenue: 0 }
-  );
+  // Totais Meta
+  const totalInvested = rows.reduce((s, r) => s + r.invested, 0);
+  const totalImpressions = rows.reduce((s, r) => s + r.impressions, 0);
+  const totalClicks = rows.reduce((s, r) => s + r.clicks, 0);
+  const avgCpc = totalClicks > 0 ? totalInvested / totalClicks : 0;
+
+  // ROAS real = receita Kiwify ÷ investimento Meta
+  const roas = totalInvested > 0 && totalRevenue > 0
+    ? totalRevenue / totalInvested
+    : null;
 
   const cols: { key: SortKey; label: string }[] = [
     { key: "name", label: "Campanha" },
-    { key: "platform", label: "Plataforma" },
     { key: "invested", label: "Investido" },
-    { key: "leads", label: "Leads" },
-    { key: "cpl", label: "CPL" },
-    { key: "sales", label: "Vendas" },
-    { key: "cpa", label: "CPA" },
-    { key: "revenue", label: "Receita" },
-    { key: "roas", label: "ROAS" },
+    { key: "impressions", label: "Impressões" },
+    { key: "clicks", label: "Cliques" },
+    { key: "cpc", label: "CPC" },
   ];
-
-  const fmt = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
   return (
     <div className="card-dashboard overflow-hidden">
+      {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <h3 className="kpi-label">Performance por Campanha</h3>
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="kpi-label">Campanhas MAR26</h3>
           {isLive
-            ? <Badge className="bg-green-500/20 text-green-700 dark:text-green-400 text-[10px]">🟢 Meta Ads · MAR26</Badge>
+            ? <Badge className="bg-green-500/20 text-green-700 dark:text-green-400 text-[10px]">🟢 Meta Ads ao vivo</Badge>
             : <Badge variant="secondary" className="text-[10px]">DEMO</Badge>
           }
+          {!isDemo && totalSales > 0 && (
+            <Badge className="bg-orange-500/20 text-orange-700 dark:text-orange-400 text-[10px]">
+              🛒 Kiwify: {totalSales} vendas
+            </Badge>
+          )}
         </div>
         <button
           onClick={() => refetch()}
-          disabled={isLoading}
+          disabled={metaLoading}
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-          title="Atualizar dados"
         >
-          <RefreshCw className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`} />
-          {isLoading ? "Carregando..." : "Atualizar"}
+          <RefreshCw className={`h-3 w-3 ${metaLoading ? "animate-spin" : ""}`} />
+          {metaLoading ? "Carregando..." : "Atualizar"}
         </button>
       </div>
 
-      {isError && (
+      {metaError && (
         <div className="mb-3 rounded-md bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 p-3 text-xs text-yellow-800 dark:text-yellow-200">
-          ⚠️ Não foi possível conectar ao Meta Ads — exibindo dados de demonstração. Configure META_ACCESS_TOKEN e META_AD_ACCOUNT_ID no Vercel.
+          ⚠️ Meta Ads indisponível — exibindo demonstração.
         </div>
       )}
 
-      {/* Desktop table */}
+      {/* Desktop */}
       <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
@@ -120,66 +123,80 @@ export default function CampaignTable() {
               {cols.map((c) => (
                 <th
                   key={c.key}
-                  className="px-3 py-2 text-left font-semibold text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
                   onClick={() => handleSort(c.key)}
+                  className="px-3 py-2 text-left font-semibold text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
                 >
                   <span className="inline-flex items-center gap-1">
-                    {c.label}
-                    <ArrowUpDown className="h-3 w-3" />
+                    {c.label} <ArrowUpDown className="h-3 w-3" />
                   </span>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {sorted.map((c, i) => (
-              <tr key={i} className="border-b border-border/50 hover:bg-card-hover transition-colors">
-                <td className="px-3 py-2.5 font-medium text-foreground max-w-[200px] truncate" title={c.name}>{c.name}</td>
-                <td className="px-3 py-2.5 text-muted-foreground">{c.platform}</td>
+            {sorted.map((c) => (
+              <tr key={c.id} className="border-b border-border/50 hover:bg-card-hover transition-colors">
+                <td className="px-3 py-2.5 font-medium max-w-[220px] truncate" title={c.name}>{c.name}</td>
                 <td className="px-3 py-2.5">{fmt(c.invested)}</td>
-                <td className="px-3 py-2.5">{c.leads.toLocaleString("pt-BR")}</td>
-                <td className="px-3 py-2.5">{c.cpl > 0 ? fmt(c.cpl) : "—"}</td>
-                <td className="px-3 py-2.5">{c.sales > 0 ? c.sales : "—"}</td>
-                <td className="px-3 py-2.5">{c.cpa > 0 ? fmt(c.cpa) : "—"}</td>
-                <td className="px-3 py-2.5 font-semibold">{c.revenue > 0 ? fmt(c.revenue) : "—"}</td>
-                <td className="px-3 py-2.5">{c.roas > 0 ? <>{c.roas.toFixed(2)}x {roasBadge(c.roas)}</> : "—"}</td>
+                <td className="px-3 py-2.5">{c.impressions.toLocaleString("pt-BR")}</td>
+                <td className="px-3 py-2.5">{c.clicks.toLocaleString("pt-BR")}</td>
+                <td className="px-3 py-2.5">{fmtDec(c.cpc)}</td>
               </tr>
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t border-border bg-muted/30 font-semibold text-foreground">
-              <td className="px-3 py-2.5">Total ({sorted.length} campanhas)</td>
-              <td className="px-3 py-2.5">—</td>
-              <td className="px-3 py-2.5">{fmt(totals.invested)}</td>
-              <td className="px-3 py-2.5">{totals.leads.toLocaleString("pt-BR")}</td>
-              <td className="px-3 py-2.5">{totals.leads > 0 ? fmt(totals.invested / totals.leads) : "—"}</td>
-              <td className="px-3 py-2.5">{totals.sales > 0 ? totals.sales : "—"}</td>
-              <td className="px-3 py-2.5">{totals.sales > 0 ? fmt(totals.invested / totals.sales) : "—"}</td>
-              <td className="px-3 py-2.5">{totals.revenue > 0 ? fmt(totals.revenue) : "—"}</td>
-              <td className="px-3 py-2.5">{totals.invested > 0 && totals.revenue > 0 ? `${(totals.revenue / totals.invested).toFixed(2)}x` : "—"}</td>
+            {/* Linha de totais Meta */}
+            <tr className="border-t border-border bg-muted/30 font-semibold text-foreground text-xs">
+              <td className="px-3 py-2.5">Total Meta ({rows.length} camp.)</td>
+              <td className="px-3 py-2.5">{fmt(totalInvested)}</td>
+              <td className="px-3 py-2.5">{totalImpressions.toLocaleString("pt-BR")}</td>
+              <td className="px-3 py-2.5">{totalClicks.toLocaleString("pt-BR")}</td>
+              <td className="px-3 py-2.5">{fmtDec(avgCpc)}</td>
             </tr>
+            {/* Linha de resultado Kiwify */}
+            {(totalRevenue > 0 || totalSales > 0) && (
+              <tr className="border-t-2 border-orange-300/50 bg-orange-50/30 dark:bg-orange-950/10 font-semibold text-xs">
+                <td className="px-3 py-2.5 text-orange-700 dark:text-orange-400">
+                  🛒 Kiwify{isDemo ? " (demo)" : ""}
+                </td>
+                <td className="px-3 py-2.5 text-muted-foreground" colSpan={2}>
+                  {totalSales} vendas · ticket {fmt(avgTicket)}
+                </td>
+                <td className="px-3 py-2.5 text-green-700 dark:text-green-400 font-bold">
+                  Receita: {fmt(totalRevenue)}
+                </td>
+                <td className="px-3 py-2.5 text-blue-700 dark:text-blue-400 font-bold">
+                  {roas ? `ROAS ${roas.toFixed(2)}x` : "—"}
+                </td>
+              </tr>
+            )}
           </tfoot>
         </table>
       </div>
 
       {/* Mobile cards */}
       <div className="md:hidden flex flex-col gap-3">
-        {sorted.map((c, i) => (
-          <div key={i} className="rounded-lg border border-border bg-muted/30 p-3">
-            <div className="flex justify-between items-start mb-2">
-              <div>
-                <p className="text-sm font-semibold text-foreground">{c.name}</p>
-                <p className="text-[10px] text-muted-foreground">{c.platform}</p>
-              </div>
-              {c.roas > 0 && roasBadge(c.roas)}
-            </div>
+        {sorted.map((c) => (
+          <div key={c.id} className="rounded-lg border border-border bg-muted/30 p-3">
+            <p className="text-sm font-semibold mb-2 truncate" title={c.name}>{c.name}</p>
             <div className="grid grid-cols-3 gap-2 text-xs">
-              <div><span className="text-muted-foreground">Investido</span><p className="font-semibold">{fmt(c.invested)}</p></div>
-              <div><span className="text-muted-foreground">Leads</span><p className="font-semibold">{c.leads.toLocaleString("pt-BR")}</p></div>
-              <div><span className="text-muted-foreground">ROAS</span><p className="font-semibold">{c.roas > 0 ? `${c.roas.toFixed(2)}x` : "—"}</p></div>
+              <div><span className="text-muted-foreground block">Investido</span><p className="font-semibold">{fmt(c.invested)}</p></div>
+              <div><span className="text-muted-foreground block">Cliques</span><p className="font-semibold">{c.clicks.toLocaleString("pt-BR")}</p></div>
+              <div><span className="text-muted-foreground block">CPC</span><p className="font-semibold">{fmtDec(c.cpc)}</p></div>
             </div>
           </div>
         ))}
+
+        {/* Resumo mobile */}
+        <div className="rounded-lg border border-border bg-muted/50 p-3 text-xs space-y-1">
+          <p className="font-semibold text-foreground">Resumo</p>
+          <div className="flex justify-between"><span className="text-muted-foreground">Investido (Meta)</span><span className="font-semibold">{fmt(totalInvested)}</span></div>
+          {totalRevenue > 0 && <>
+            <div className="flex justify-between"><span className="text-muted-foreground">Vendas (Kiwify)</span><span className="font-semibold">{totalSales}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Receita (Kiwify)</span><span className="font-semibold text-green-600">{fmt(totalRevenue)}</span></div>
+            {roas && <div className="flex justify-between"><span className="text-muted-foreground">ROAS Real</span><span className="font-bold text-blue-600">{roas.toFixed(2)}x</span></div>}
+          </>}
+        </div>
       </div>
     </div>
   );
