@@ -104,7 +104,7 @@ function mapToTableRow(insight) {
     id: insight.campaign_id,
     name: insight.campaign_name,
     platform: "Meta Ads",
-    invested: spend,
+    spend,
     impressions,
     clicks,
     leads: Math.round(leads),
@@ -150,7 +150,7 @@ export default async function handler(req, res) {
     if (action === "campaigns") {
       const insights = await fetchCampaignInsights(datePreset);
       const campaigns = insights.map(mapToTableRow);
-      campaigns.sort((a, b) => b.invested - a.invested);
+      campaigns.sort((a, b) => b.spend - a.spend);
       return res.status(200).json({ success: true, data: campaigns, filter: NAME_FILTER });
     }
 
@@ -158,7 +158,7 @@ export default async function handler(req, res) {
       const insights = await fetchCampaignInsights(datePreset);
       const campaigns = insights.map(mapToTableRow);
 
-      const totalSpend      = campaigns.reduce((s, c) => s + c.invested, 0);
+      const totalSpend      = campaigns.reduce((s, c) => s + c.spend, 0);
       const totalImpressions = campaigns.reduce((s, c) => s + c.impressions, 0);
       const totalClicks     = campaigns.reduce((s, c) => s + c.clicks, 0);
       const totalLeads      = campaigns.reduce((s, c) => s + c.leads, 0);
