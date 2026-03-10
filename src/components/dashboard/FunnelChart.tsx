@@ -1,6 +1,27 @@
-import { funnelData } from "@/data/mockData";
+import { useMetaAdsSummary } from "@/hooks/useMetaAds";
+import { useKiwifySales } from "@/hooks/useKiwifySales";
 
 export default function FunnelChart() {
+  const { data: meta } = useMetaAdsSummary("this_month");
+  const { totalSales } = useKiwifySales(30);
+
+  const funnelData = [
+    { stage: "Impressões", value: meta?.totalImpressions ?? 0, color: "hsl(239, 84%, 67%)" },
+    { stage: "Cliques", value: meta?.totalClicks ?? 0, color: "hsl(239, 84%, 60%)" },
+    { stage: "Leads", value: meta?.totalLeads ?? 0, color: "hsl(239, 84%, 52%)" },
+    { stage: "Pág. Vendas", value: meta?.totalPageViews ?? 0, color: "hsl(200, 80%, 50%)" },
+    { stage: "Vendas", value: totalSales, color: "hsl(160, 84%, 39%)" },
+  ].filter((d) => d.value > 0);
+
+  if (funnelData.length === 0) {
+    return (
+      <div className="card-dashboard flex flex-col gap-4">
+        <h3 className="kpi-label">Funil de Conversão</h3>
+        <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">Carregando...</div>
+      </div>
+    );
+  }
+
   const maxVal = funnelData[0].value;
 
   return (

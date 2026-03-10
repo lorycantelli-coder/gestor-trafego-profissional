@@ -179,6 +179,61 @@ export default async function handler(req, res) {
       });
     }
 
+    if (action === "daily-summary") {
+      const dateStart = req.query?.dateStart;
+      const dateStop = req.query?.dateStop;
+
+      const filtering = JSON.stringify([
+        { field: "campaign.name", operator: "CONTAIN", value: NAME_FILTER },
+      ]);
+
+      const fields = [
+        "date_start",
+        "date_stop",
+        "spend",
+        "impressions",
+        "clicks",
+        "actions",
+      ].join(",");
+
+      const params = new URLSearchParams({
+        level: "account",
+        fields,
+        filtering,
+        time_increment: "1",
+        access_token: ACCESS_TOKEN,
+        limit: "500",
+      });
+
+      if (dateStart && dateStop) {
+        params.set("time_range", JSON.stringify({ since: dateStart, until: dateStop }));
+      } else {
+        params.set("date_preset", datePreset);
+      }
+
+      const apiUrl = `${GRAPH_BASE}/${ACCOUNT_ID}/insights?${params.toString()}`;
+      const apiRes = await fetch(apiUrl);
+
+      if (!apiRes.ok) {
+        const err = await apiRes.json().catch(() => ({}));
+        throw new Error(err?.error?.message || `Meta API error ${apiRes.status}`);
+      }
+
+      const json = await apiRes.json();
+
+      // Agrega por dia (já vem um registro por dia no level=account com time_increment=1)
+      const data = (json.data || []).map((d) => ({
+        date_start: d.date_start,
+        date_stop: d.date_stop,
+        spend: d.spend || "0",
+        impressions: d.impressions || "0",
+        clicks: d.clicks || "0",
+        actions: d.actions || [],
+      }));
+
+      return res.status(200).json({ success: true, data });
+    }
+
     return res.status(400).json({ error: `Ação desconhecida: ${action}` });
   } catch (error) {
     console.error("[Meta Ads API] Erro:", error.message);
