@@ -76,6 +76,13 @@ function mapToTableRow(insight) {
     "offsite_conversion.fb_pixel_lead",
   ]);
 
+  // Views da página de vendas (ViewContent pixel)
+  const pageViews = extractAction(insight.actions, [
+    "view_content",
+    "offsite_conversion.fb_pixel_view_content",
+    "landing_page_view",
+  ]);
+
   // Vendas: compra pixel ou purchase
   const sales = extractAction(insight.actions, [
     "purchase",
@@ -103,6 +110,7 @@ function mapToTableRow(insight) {
     impressions,
     clicks,
     leads: Math.round(leads),
+    pageViews: Math.round(pageViews),
     cpl: Math.round(cpl * 100) / 100,
     sales: Math.round(sales),
     cpa: Math.round(cpa * 100) / 100,
@@ -144,11 +152,33 @@ export default async function handler(req, res) {
     if (action === "campaigns") {
       const insights = await fetchCampaignInsights(datePreset);
       const campaigns = insights.map(mapToTableRow);
-
-      // Ordena por investimento (maior primeiro)
       campaigns.sort((a, b) => b.invested - a.invested);
-
       return res.status(200).json({ success: true, data: campaigns, filter: NAME_FILTER });
+    }
+
+    if (action === "summary") {
+      const insights = await fetchCampaignInsights(datePreset);
+      const campaigns = insights.map(mapToTableRow);
+
+      const totalSpend      = campaigns.reduce((s, c) => s + c.invested, 0);
+      const totalImpressions = campaigns.reduce((s, c) => s + c.impressions, 0);
+      const totalClicks     = campaigns.reduce((s, c) => s + c.clicks, 0);
+      const totalLeads      = campaigns.reduce((s, c) => s + c.leads, 0);
+      const totalPageViews  = campaigns.reduce((s, c) => s + c.pageViews, 0);
+      const avgCpc          = totalClicks > 0 ? totalSpend / totalClicks : 0;
+      const avgCpl          = totalLeads  > 0 ? totalSpend / totalLeads  : 0;
+
+      return res.status(200).json({
+        success: true,
+        filter: NAME_FILTER,
+        totalSpend,
+        totalImpressions,
+        totalClicks,
+        totalLeads,
+        totalPageViews,
+        avgCpc: Math.round(avgCpc * 100) / 100,
+        avgCpl: Math.round(avgCpl * 100) / 100,
+      });
     }
 
     return res.status(400).json({ error: `Ação desconhecida: ${action}` });

@@ -7,13 +7,23 @@ export interface MetaCampaign {
   spend: number;
   impressions: number;
   clicks: number;
-  /** Número de leads (extraído de actions) */
   actions: number;
-  /** Receita total (extraído de action_values) */
+  pageViews: number;
   action_values: number;
   roas?: number;
   cpa?: number;
   cpc?: number;
+}
+
+export interface MetaSummary {
+  success: boolean;
+  totalSpend: number;
+  totalImpressions: number;
+  totalClicks: number;
+  totalLeads: number;
+  totalPageViews: number;
+  avgCpc: number;
+  avgCpl: number;
 }
 
 export interface MetaInsight {
@@ -46,6 +56,20 @@ export const useMetaAdsCampaigns = () => {
       return data.data;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: 2,
+  });
+};
+
+export const useMetaAdsSummary = (datePreset = "this_month") => {
+  return useQuery({
+    queryKey: ["meta-ads-summary", datePreset],
+    queryFn: async () => {
+      const params = new URLSearchParams({ action: "summary", datePreset });
+      const response = await fetch(`${API_BASE_URL}/api/meta-ads?${params.toString()}`);
+      if (!response.ok) throw new Error("Failed to fetch Meta summary");
+      return (await response.json()) as MetaSummary;
+    },
+    staleTime: 5 * 60 * 1000,
     retry: 2,
   });
 };

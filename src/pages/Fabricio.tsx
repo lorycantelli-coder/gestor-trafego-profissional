@@ -12,7 +12,7 @@ import PaymentBreakdown from "@/components/dashboard/PaymentBreakdown";
 import RevenueProjection from "@/components/dashboard/RevenueProjection";
 import KiwifySalesPanel from "@/components/dashboard/KiwifySalesPanel";
 import { useKiwifySales } from "@/hooks/useKiwifySales";
-import { useMetaAdsCampaigns } from "@/hooks/useMetaAds";
+import { useMetaAdsSummary } from "@/hooks/useMetaAds";
 
 const fmt = (v: number) =>
   `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -34,19 +34,24 @@ const Fabricio = () => {
 
   // Dados reais — Kiwify (vendas) + Meta (investimento/tráfego)
   const kiwify = useKiwifySales(30);
-  const { data: metaCampaigns } = useMetaAdsCampaigns();
+  const { data: meta } = useMetaAdsSummary("this_month");
 
   // Métricas Kiwify
   const totalRevenue = kiwify.totalRevenue;
   const totalSales = kiwify.totalSales;
   const avgTicket = kiwify.avgTicket;
-  const conversionRate = kiwify.conversionRate;
 
   // Métricas Meta
-  const totalInvested = metaCampaigns?.reduce((s, c) => s + c.spend, 0) ?? 0;
-  const totalClicks = metaCampaigns?.reduce((s, c) => s + c.clicks, 0) ?? 0;
-  const totalImpressions = metaCampaigns?.reduce((s, c) => s + c.impressions, 0) ?? 0;
-  const totalLeads = metaCampaigns?.reduce((s, c) => s + c.actions, 0) ?? 0;
+  const totalInvested   = meta?.totalSpend       ?? 0;
+  const totalClicks     = meta?.totalClicks      ?? 0;
+  const totalImpressions = meta?.totalImpressions ?? 0;
+  const totalLeads      = meta?.totalLeads       ?? 0;
+  const totalPageViews  = meta?.totalPageViews   ?? 0;
+
+  // Taxa de conversão = compras Kiwify ÷ views da página (pixel Meta)
+  const conversionRate = totalPageViews > 0 && totalSales > 0
+    ? (totalSales / totalPageViews) * 100
+    : 0;
 
   // ROAS real = receita Kiwify ÷ investimento Meta
   const roas = totalInvested > 0 && totalRevenue > 0
@@ -112,21 +117,21 @@ const Fabricio = () => {
               <KPICard
                 label="Faturamento Bruto"
                 value={fmt(totalRevenue)}
-                changeLabel="Kiwify · 30 dias"
+                changeLabel="Kiwify"
               />
               <KPICard
                 label="Vendas"
                 value={String(totalSales)}
-                changeLabel="Kiwify · 30 dias"
+                changeLabel="Kiwify"
               />
               <KPICard
                 label="Ticket Médio"
                 value={avgTicket > 0 ? fmt(avgTicket) : "—"}
               />
               <KPICard
-                label="Investido (Meta)"
-                value={totalInvested > 0 ? fmtInt(totalInvested) : "—"}
-                changeLabel="MAR26"
+                label="Conversão"
+                value={conversionRate > 0 ? `${conversionRate.toFixed(2)}%` : "—"}
+                changeLabel="Compras ÷ Views página"
               />
               <KPICard
                 label="ROAS Real"
@@ -176,17 +181,17 @@ const Fabricio = () => {
           <>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
               <KPICard
-                label="Total de Leads"
-                value={totalLeads > 0 ? totalLeads.toLocaleString("pt-BR") : "—"}
-                changeLabel="Meta MAR26"
+                label="Views Pág. Vendas"
+                value={totalPageViews > 0 ? totalPageViews.toLocaleString("pt-BR") : "—"}
+                changeLabel="Pixel Meta"
               />
               <KPICard
-                label="Taxa de Conversão"
-                value={conversionRate > 0 ? `${conversionRate.toFixed(1)}%` : "—"}
-                changeLabel="Kiwify"
+                label="Conversão"
+                value={conversionRate > 0 ? `${conversionRate.toFixed(2)}%` : "—"}
+                changeLabel="Compras ÷ Views"
               />
               <KPICard
-                label="Total de Cliques"
+                label="Cliques"
                 value={totalClicks > 0 ? totalClicks.toLocaleString("pt-BR") : "—"}
                 changeLabel="Meta MAR26"
               />
