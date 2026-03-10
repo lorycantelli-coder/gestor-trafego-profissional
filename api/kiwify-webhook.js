@@ -29,15 +29,22 @@ async function redisPipeline(commands) {
 function parseSale(body) {
   const event = body.event || "order.completed";
 
-  // Kiwify pode enviar dados em diferentes estruturas dependendo da versão
+  // Kiwify envia em estruturas diferentes dependendo da versão/tipo de evento
+  // Estrutura A: { data: { order: {...} } }
+  // Estrutura B: { data: {...} }
+  // Estrutura C: { order: {...} }
+  // Estrutura D: campos diretos na raiz
   const order =
     body.data?.order ||
     body.data ||
     body.order ||
     body;
 
-  const customer = order.customer || {};
-  const product = order.product || {};
+  const customer = order.customer || order.Customer || {};
+  const product = order.product || order.Product || {};
+
+  // pagamento pode estar em order.payment ou direto
+  const payment = order.payment || {};
 
   const statusMap = {
     "order.completed": "completed",
@@ -45,18 +52,46 @@ function parseSale(body) {
     "order.created": "pending",
   };
 
+  // Valor: tenta vários campos possíveis
+  const rawAmount =
+    order.amount ||
+    order.total ||
+    order.price ||
+    order.value ||
+    order.order_value ||
+    payment.amount ||
+    0;
+
   return {
     id: `kwf-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    orderId: String(order.id || order.order_id || `manual-${Date.now()}`),
-    customerName: customer.name || order.customer_name || "Cliente",
-    customerEmail: customer.email || order.customer_email || "",
-    productName: product.name || order.product_name || "Produto",
+    orderId: String(order.id || order.order_id || body.id || `manual-${Date.now()}`),
+    customerName:
+      customer.name ||
+      customer.full_name ||
+      order.customer_name ||
+      order.buyer_name ||
+      "Cliente",
+    customerEmail:
+      customer.email ||
+      order.customer_email ||
+      order.buyer_email ||
+      "",
+    productName:
+      product.name ||
+      product.title ||
+      order.product_name ||
+      order.offer_name ||
+      "Produto",
     productId: String(product.id || order.product_id || ""),
-    amount: Number(order.amount || order.price || order.total || 0),
+    amount: Number(rawAmount),
     currency: order.currency || "BRL",
     status: statusMap[event] || "pending",
-    timestamp: order.created_at || new Date().toISOString(),
-    paymentMethod: order.payment_method || order.payment_type || "unknown",
+    timestamp: order.created_at || order.approved_at || new Date().toISOString(),
+    paymentMethod:
+      order.payment_method ||
+      payment.method ||
+      order.payment_type ||
+      "unknown",
     event,
   };
 }
