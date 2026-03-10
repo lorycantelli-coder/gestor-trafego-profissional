@@ -115,6 +115,7 @@ export default async function handler(req, res) {
     const event = body.event || "order.completed";
 
     console.log("[Kiwify Webhook] Evento recebido:", event);
+    console.log("[Kiwify Webhook] RAW BODY:", JSON.stringify(body));
 
     // Ignorar eventos não relevantes
     const relevantEvents = ["order.completed", "order.created", "order.refunded"];
