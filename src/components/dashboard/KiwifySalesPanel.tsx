@@ -85,8 +85,7 @@ export default function KiwifySalesPanel() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs text-muted-foreground">Última venda</p>
-              <p className="font-semibold">{lastSale.customerName}</p>
-              <p className="text-sm text-muted-foreground">{lastSale.productName}</p>
+              <p className="font-semibold">{lastSale.productName}</p>
               {lastSale.paymentMethod && (
                 <p className="text-xs text-muted-foreground mt-1">
                   {paymentLabel[lastSale.paymentMethod] ?? lastSale.paymentMethod}
@@ -113,14 +112,12 @@ export default function KiwifySalesPanel() {
           <div className="divide-y max-h-64 overflow-y-auto">
             {recentSales.map((sale) => (
               <div key={sale.id} className="p-3 hover:bg-muted/50 transition-colors text-sm">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium">{sale.customerName}</span>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{sale.productName}</span>
                   <span className="font-bold">{fmt(sale.amount)}</span>
                 </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>
-                    {sale.productName} · {paymentLabel[sale.paymentMethod ?? ""] ?? sale.paymentMethod}
-                  </span>
+                <div className="flex items-center justify-between text-xs text-muted-foreground mt-0.5">
+                  <span>{paymentLabel[sale.paymentMethod ?? ""] ?? sale.paymentMethod}</span>
                   <span>{new Date(sale.timestamp).toLocaleTimeString("pt-BR")}</span>
                 </div>
               </div>
