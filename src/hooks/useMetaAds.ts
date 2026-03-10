@@ -3,14 +3,17 @@ import { useQuery } from "@tanstack/react-query";
 export interface MetaCampaign {
   id: string;
   name: string;
-  status: string;
+  platform: string;
   spend: number;
   impressions: number;
   clicks: number;
+  /** Número de leads (extraído de actions) */
   actions: number;
+  /** Receita total (extraído de action_values) */
   action_values: number;
   roas?: number;
   cpa?: number;
+  cpc?: number;
 }
 
 export interface MetaInsight {
