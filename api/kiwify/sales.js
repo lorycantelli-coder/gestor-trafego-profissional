@@ -1,159 +1,135 @@
 // Vercel Serverless Function - Kiwify Sales API
-// GET /api/kiwify/sales?days=7
+// GET /api/kiwify/sales?days=30
 
-const REDIS_URL =
-  process.env.KV_REST_API_URL ||
-  process.env.UPSTASH_REDIS_REST_URL;
-const REDIS_TOKEN =
-  process.env.KV_REST_API_TOKEN ||
-  process.env.UPSTASH_REDIS_REST_TOKEN;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
-/** Busca todas as vendas do Redis */
-async function getSalesFromRedis() {
-  if (!REDIS_URL || !REDIS_TOKEN) return null;
+// Janela fixa de captação ABR26: 14/04/2026 → 16/05/2026
+const DATE_FROM = "2026-04-14T00:00:00.000Z";
+const DATE_TO   = "2026-05-16T23:59:59.999Z";
 
-  const res = await fetch(`${REDIS_URL}/lrange/kiwify:sales/0/499`, {
-    headers: { Authorization: `Bearer ${REDIS_TOKEN}` },
+async function getSalesFromSupabase() {
+  const url =
+    `${SUPABASE_URL}/rest/v1/kiwify_sales` +
+    `?created_at=gte.${DATE_FROM}` +
+    `&created_at=lte.${DATE_TO}` +
+    `&status=in.(paid,refunded,chargeback)` +
+    `&select=sale_id,status,product,offer,customer_name,customer_email,payment_method,total_amount,net_value,created_at,utm_source,utm_medium,utm_campaign,utm_content,utm_term` +
+    `&order=created_at.desc&limit=2000`;
+
+  const res = await fetch(url, {
+    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
   });
 
-  if (!res.ok) return null;
-
-  const data = await res.json();
-  const rawList = data.result || [];
-
-  return rawList
-    .map((item) => {
-      try {
-        return typeof item === "string" ? JSON.parse(item) : item;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean);
+  if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
+  return res.json();
 }
 
-/** Dados de demonstração quando Redis não está configurado */
-function getDemoSales() {
-  const now = Date.now();
-  return [
-    {
-      id: "demo-1",
-      orderId: "KWF-DEMO-001",
-      customerName: "João Silva",
-      customerEmail: "joao@example.com",
-      productName: "Método Expert Digital",
-      productId: "prod-demo",
-      amount: 1997,
-      currency: "BRL",
-      status: "completed",
-      timestamp: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
-      paymentMethod: "credit_card",
-    },
-    {
-      id: "demo-2",
-      orderId: "KWF-DEMO-002",
-      customerName: "Maria Santos",
-      customerEmail: "maria@example.com",
-      productName: "Método Expert Digital",
-      productId: "prod-demo",
-      amount: 1997,
-      currency: "BRL",
-      status: "completed",
-      timestamp: new Date(now - 60 * 60 * 1000).toISOString(),
-      paymentMethod: "pix",
-    },
-    {
-      id: "demo-3",
-      orderId: "KWF-DEMO-003",
-      customerName: "Carlos Oliveira",
-      customerEmail: "carlos@example.com",
-      productName: "Método Expert Digital",
-      productId: "prod-demo",
-      amount: 1997,
-      currency: "BRL",
-      status: "pending",
-      timestamp: new Date(now - 15 * 60 * 1000).toISOString(),
-      paymentMethod: "boleto",
-    },
-  ];
+function mapToSale(row) {
+  return {
+    id:            row.sale_id,
+    orderId:       row.sale_id,
+    customerName:  row.customer_name  || "Cliente",
+    customerEmail: row.customer_email || "",
+    productName:   row.product        || "Produto",
+    productId:     row.offer          || "",
+    amount:        Number(row.total_amount || 0),
+    netValue:      Number(row.net_value    || 0),
+    currency:      "BRL",
+    status:        row.status === "paid" ? "completed" : row.status,
+    timestamp:     row.created_at,
+    paymentMethod: row.payment_method || "unknown",
+    utm_source:    row.utm_source   || null,
+    utm_medium:    row.utm_medium   || null,
+    utm_campaign:  row.utm_campaign || null,
+    utm_content:   row.utm_content  || null,
+    utm_term:      row.utm_term     || null,
+  };
 }
 
-/** Calcula métricas a partir de lista de vendas */
-function calculateMetrics(sales, days) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-
-  const filtered = sales.filter(
-    (s) => new Date(s.timestamp) >= cutoff
+function calculateMetrics(sales) {
+  const completed = sales.filter(
+    (s) => s.status === "completed" && Number(s.amount) > 0
   );
-  const completed = filtered.filter((s) => s.status === "completed");
 
-  const totalRevenue = completed.reduce((sum, s) => sum + Number(s.amount), 0);
-  const totalSales = completed.length;
-  const avgTicket = totalSales > 0 ? totalRevenue / totalSales : 0;
-  const conversionRate =
-    filtered.length > 0 ? (totalSales / filtered.length) * 100 : 0;
+  const totalRevenue   = completed.reduce((sum, s) => sum + Number(s.amount), 0);
+  const totalSales     = completed.length;
+  const avgTicket      = totalSales > 0 ? totalRevenue / totalSales : 0;
+  const conversionRate = sales.length > 0 ? (totalSales / sales.length) * 100 : 0;
 
-  const sorted = [...completed].sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-  );
+  const byPayment = completed.reduce((acc, s) => {
+    const m = s.paymentMethod || "unknown";
+    acc[m] = (acc[m] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Tráfego pago (Meta) vs orgânico
+  const isPaid = (s) => s.utm_source && s.utm_source.includes("fbads");
+  const paid    = completed.filter(isPaid);
+  const organic = completed.filter((s) => !isPaid(s));
+
+  const byTraffic = {
+    paid:    { sales: paid.length,    revenue: paid.reduce((sum, s)    => sum + Number(s.amount), 0) },
+    organic: { sales: organic.length, revenue: organic.reduce((sum, s) => sum + Number(s.amount), 0) },
+  };
+
+  // Por produto: ingresso vs gravação
+  const ingresso = completed.filter((s) => s.productName.toLowerCase().includes("ingresso"));
+  const gravacao  = completed.filter((s) => s.productName.toLowerCase().includes("grava"));
+
+  const byProductType = {
+    ingresso: { sales: ingresso.length, revenue: ingresso.reduce((sum, s) => sum + Number(s.amount), 0) },
+    gravacao:  { sales: gravacao.length,  revenue: gravacao.reduce((sum, s)  => sum + Number(s.amount), 0) },
+  };
+
+  // Tráfego pago vs orgânico — apenas ingresso
+  const ingressoPaid    = ingresso.filter(isPaid);
+  const ingressoOrganic = ingresso.filter((s) => !isPaid(s));
+  const byTrafficIngresso = {
+    paid:    { sales: ingressoPaid.length,    revenue: ingressoPaid.reduce((sum, s)    => sum + Number(s.amount), 0) },
+    organic: { sales: ingressoOrganic.length, revenue: ingressoOrganic.reduce((sum, s) => sum + Number(s.amount), 0) },
+  };
 
   return {
     totalRevenue,
     totalSales,
     avgTicket,
     conversionRate,
-    lastSale: sorted[0] || null,
-    recentSales: sorted.slice(0, 50),
-    isLoading: false,
-    error: null,
-    isDemo: false,
+    lastSale:      completed[0] || null,
+    recentSales:   completed,
+    byPayment,
+    byTraffic,
+    byProductType,
+    byTrafficIngresso,
+    isLoading:     false,
+    error:         null,
+    isDemo:        false,
   };
 }
 
 export default async function handler(req, res) {
-  // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.setHeader("Cache-Control", "no-store");
 
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
-  if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    return res.status(500).json({ error: "SUPABASE_URL ou SUPABASE_SERVICE_KEY não configurados" });
   }
-
-  const days = parseInt(req.query?.days || "7", 10);
 
   try {
-    // Tentar buscar dados reais do Redis
-    const redisSales = await getSalesFromRedis();
-
-    if (redisSales !== null) {
-      // Redis configurado — retornar dados reais
-      const metrics = calculateMetrics(redisSales, days);
-      return res.status(200).json(metrics);
-    }
-
-    // Redis não configurado — retornar dados de demonstração
-    const demoSales = getDemoSales();
-    const metrics = calculateMetrics(demoSales, days);
-    metrics.isDemo = true;
-
+    const rows    = await getSalesFromSupabase();
+    const sales   = rows.map(mapToSale);
+    const metrics = calculateMetrics(sales);
     return res.status(200).json(metrics);
   } catch (error) {
     console.error("[Kiwify Sales API] Erro:", error);
     return res.status(500).json({
-      totalRevenue: 0,
-      totalSales: 0,
-      avgTicket: 0,
-      conversionRate: 0,
-      lastSale: null,
-      recentSales: [],
-      isLoading: false,
+      totalRevenue: 0, totalSales: 0, avgTicket: 0, conversionRate: 0,
+      lastSale: null, recentSales: [], isLoading: false,
       error: String(error.message),
     });
   }
