@@ -12,7 +12,7 @@ const ACCOUNT_ID = RAW_ACCOUNT_ID.startsWith("act_")
   ? RAW_ACCOUNT_ID
   : `act_${RAW_ACCOUNT_ID}`;
 
-const NAME_FILTER = "MAR26";
+const NAME_FILTER = "ABR26";
 
 /**
  * Busca insights de campanhas que contêm NAME_FILTER no nome.
@@ -67,7 +67,9 @@ function extractAction(arr = [], types = []) {
 function mapToTableRow(insight) {
   const spend = Number(insight.spend || 0);
   const impressions = Number(insight.impressions || 0);
-  const clicks = Number(insight.clicks || 0);
+
+  // Cliques no link (só cliques que abrem a URL do anúncio)
+  const clicks = extractAction(insight.actions, ["link_click"]) || Number(insight.clicks || 0);
 
   // Leads: lead form, pixel lead, ou lead agrupado
   const leads = extractAction(insight.actions, [
@@ -77,23 +79,13 @@ function mapToTableRow(insight) {
   ]);
 
   // Visualizações de página de destino (clicou no anúncio e a página carregou)
-  const pageViews = extractAction(insight.actions, [
-    "landing_page_view",
-  ]);
+  const pageViews = extractAction(insight.actions, ["landing_page_view"]);
 
-  // Vendas: compra pixel ou purchase
-  const sales = extractAction(insight.actions, [
-    "purchase",
-    "offsite_conversion.fb_pixel_purchase",
-    "omni_purchase",
-  ]);
+  // Vendas: omni_purchase unifica todas as origens sem duplicar
+  const sales = extractAction(insight.actions, ["omni_purchase"]);
 
   // Receita: valor das compras
-  const revenue = extractAction(insight.action_values, [
-    "purchase",
-    "offsite_conversion.fb_pixel_purchase",
-    "omni_purchase",
-  ]);
+  const revenue = extractAction(insight.action_values, ["omni_purchase"]);
 
   const cpl = leads > 0 ? spend / leads : 0;
   const cpa = sales > 0 ? spend / sales : 0;
@@ -232,6 +224,86 @@ export default async function handler(req, res) {
       }));
 
       return res.status(200).json({ success: true, data });
+    }
+
+    if (action === "ads-with-links") {
+      // Busca anúncios com Instagram permalink URL
+      const filtering = JSON.stringify([
+        { field: "campaign.name", operator: "CONTAIN", value: NAME_FILTER },
+      ]);
+
+      // 1. Busca insights por anúncio
+      const insightParams = new URLSearchParams({
+        level: "ad",
+        fields: "ad_id,ad_name,campaign_id,campaign_name,spend,impressions,clicks,actions,action_values",
+        filtering,
+        date_preset: datePreset,
+        access_token: ACCESS_TOKEN,
+        limit: "100",
+      });
+      const insightRes = await fetch(`${GRAPH_BASE}/${ACCOUNT_ID}/insights?${insightParams}`);
+      const insightJson = await insightRes.json();
+      const insights = insightJson.data || [];
+
+      // 2. Busca criativos com instagram_permalink_url via /ads endpoint
+      const linkMap = {};
+      const adsCreativeParams = new URLSearchParams({
+        fields: "id,adcreatives{instagram_permalink_url,object_story_id,effective_instagram_story_id}",
+        filtering: JSON.stringify([
+          { field: "campaign.name", operator: "CONTAIN", value: NAME_FILTER },
+        ]),
+        access_token: ACCESS_TOKEN,
+        limit: "200",
+      });
+      const adsCreativeRes = await fetch(`${GRAPH_BASE}/${ACCOUNT_ID}/ads?${adsCreativeParams}`);
+      const adsCreativeJson = await adsCreativeRes.json();
+      const adsCreativeList = adsCreativeJson.data || [];
+
+      for (const ad of adsCreativeList) {
+        const creatives = ad?.adcreatives?.data || [];
+        const c = creatives[0];
+        if (!c) continue;
+
+        if (c.instagram_permalink_url) {
+          linkMap[ad.id] = c.instagram_permalink_url;
+        } else if (c.effective_instagram_story_id) {
+          linkMap[ad.id] = `https://www.instagram.com/p/${c.effective_instagram_story_id}/`;
+        } else if (c.object_story_id) {
+          const parts = c.object_story_id.split("_");
+          if (parts.length === 2) {
+            linkMap[ad.id] = `https://www.facebook.com/${parts[0]}/posts/${parts[1]}`;
+          }
+        }
+      }
+
+      // 3. Monta resultado usando dados de conversão do próprio Meta (pixel de compra)
+      const ads = insights.map(i => {
+        const spend = Number(i.spend || 0);
+        const clicks = Number(i.clicks || 0);
+
+        const sales = Math.round(extractAction(i.actions, ["omni_purchase"]));
+        const revenue = Math.round(extractAction(i.action_values, ["omni_purchase"]) * 100) / 100;
+
+        const roas = spend > 0 && revenue > 0 ? revenue / spend : 0;
+        const cpa = sales > 0 ? spend / sales : 0;
+        return {
+          id: i.ad_id,
+          name: i.ad_name,
+          campaignId: i.campaign_id,
+          campaignName: i.campaign_name,
+          spend: Math.round(spend * 100) / 100,
+          impressions: Number(i.impressions || 0),
+          clicks,
+          sales,
+          revenue,
+          roas: Math.round(roas * 100) / 100,
+          cpa: Math.round(cpa * 100) / 100,
+          instagramUrl: linkMap[i.ad_id] || null,
+        };
+      });
+
+      ads.sort((a, b) => b.spend - a.spend);
+      return res.status(200).json({ success: true, data: ads });
     }
 
     return res.status(400).json({ error: `Ação desconhecida: ${action}` });
